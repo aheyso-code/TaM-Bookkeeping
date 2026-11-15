@@ -1,0 +1,49 @@
+name: Build Android APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore Android source structure
+        run: |
+          if [ -f TaM_Bookkeeping_GitHub_Ready.zip ]; then
+            unzip -o TaM_Bookkeeping_GitHub_Ready.zip -d /tmp/tam-source
+            cp -r /tmp/tam-source/app .
+            cp /tmp/tam-source/build.gradle /tmp/tam-source/settings.gradle .
+            printf '.gradle/\n**/build/\nlocal.properties\n' > .gitignore
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add app build.gradle settings.gradle .gitignore
+            git rm TaM_Bookkeeping_GitHub_Ready.zip
+            git commit -m 'Extract Android project into repository root'
+            git push
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TaM-Bookkeeping-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Publish installable APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "debug-$GITHUB_RUN_NUMBER" app/build/outputs/apk/debug/app-debug.apk --target "$(git rev-parse HEAD)" --title "TaM Bookkeeping Debug #$GITHUB_RUN_NUMBER" --notes "Android 7.0 or newer. Debug build for personal use."
